@@ -38,7 +38,7 @@ def initialize_vector_db(docs):
     vector_db = Chroma.from_documents(documents=docs, embedding=embeddings, persist_directory="./db")
     vector_db.persist()
     print("EMBEDDING DONE!")
-    
+        
     return vector_db
 
 

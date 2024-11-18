@@ -22,7 +22,7 @@ CONTEXT = []
 LNG = None
 
 vector_db = None
-CHUNKS = []
+CHUNKS = set()
 CHUNKS_NUMBERS = []
 # LANGUAGE SETTINGS 
 
@@ -90,7 +90,7 @@ async def handle_pdf_file(message: types.Message):
         global vector_db, CONTEXT, CHUNKS
         vector_db = vector_db_
         CONTEXT = []
-        CHUNKS = []
+        CHUNKS = set()
         
         await message.answer("Okey, let's talk about this PDF file.")
         
@@ -110,14 +110,14 @@ async def send_message(message: types.Message):
     global CONTEXT, CHUNKS, CHUNKS_NUMBERS
     if len(CONTEXT) < 2:
     
-        CHUNKS = retrieve_context(vector_db, message.text, k=4)
-        
-        print("\n\nCONTEXT RETRIEVED:")
-        for part in CHUNKS:
-            CHUNKS_NUMBERS.append(part.metadata['page'])
-            print(part)
-            print("-------------")
-        
+        # store the unique chunks
+        CHUNKS = list({doc.page_content: doc for doc in  retrieve_context(vector_db, message.text, k=4)}.values())
+
+        print("RETRIEVED CONTENT:")
+        for chunk in CHUNKS:
+            print(chunk)  
+            print("------")          
+    
         full_context = "\n".join([doc.page_content for doc in CHUNKS])
         prompt = f"Relying on this Context answer my question. But keep in mind that you have to answer this question only relying on context i did provide:\n{full_context}\n\nQuestion:\n{message.text}"
         
@@ -130,19 +130,25 @@ async def send_message(message: types.Message):
         
     elif len(CONTEXT) >= 2:
         
-        context = retrieve_context(vector_db, message.text, k=4)
+        context = list({doc.page_content: doc for doc in  retrieve_context(vector_db, message.text, k=4)}.values())
+        
+        # Create a set of contents from the first list for faster comparison
+        existing_chunks = set(doc.page_content for doc in CHUNKS)
+
+        # Filter out chunks from list2 that already exist in list1
+        context = [doc for doc in context if doc.page_content not in existing_chunks]
         
         print("\n\nCONTEXT RETRIEVED:")
-        for part in context:
-            if part.metadata['page'] in CHUNKS_NUMBERS:
-                index = context.index(part.metadata['page'])
-                context.remove(part.metadata['page'])
-                del context[index]
-            print(part)
-            print("-------------")
-        
+        for chunk in context:
+            print(chunk)
+            print("-------")
+            
+    
         full_context = "\n".join([doc.page_content for doc in context])
-        prompt = f"I have the following context in addition, can you help a bit more?\nContext:\n{full_context}\n\nQuestion:\n{message.text}"
+        if context == []:
+            prompt = f"{message.text}"
+        else: 
+            prompt = f"I have the following context in addition, can you help a bit more?\nContext:\n{full_context}\n\nQuestion:\n{message.text}"
         
         response, role, query, chat = generate_conversation_with_context(model = model, context=context, query=message.text, history=CONTEXT, prompt=prompt)
         
