@@ -2,6 +2,7 @@
 
 import os 
 import logging
+import aiogram
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import BotCommand, InlineKeyboardButton
 from aiogram import Bot, Dispatcher, types
@@ -18,6 +19,7 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+MODE = None
 CONTEXT = []
 LNG = None
 
@@ -65,8 +67,8 @@ async def lang_change(callback: types.CallbackQuery):
 
 @dp.message(F.document)
 async def handle_pdf_file(message: types.Message):
-        # Check if the file is a PDF
-    if message.document.mime_type == 'application/pdf':
+    # Check if the file is a PDF
+    if message.document.mime_type == ('application/pdf' or "application/txt"):
         # Create the 'documents' folder if it doesn't exist
         os.makedirs("documents", exist_ok=True)
         
@@ -87,12 +89,13 @@ async def handle_pdf_file(message: types.Message):
         
         # Step 2: Initialize Vector Database and Context
         vector_db_ = initialize_vector_db(docs)
-        global vector_db, CONTEXT, CHUNKS
+        global vector_db, CONTEXT, CHUNKS, MODE
         vector_db = vector_db_
         CONTEXT = []
         CHUNKS = set()
+        MODE = "chat_with_docs"
         
-        await message.answer("Okey, let's talk about this PDF file.")
+        await message.answer("Okey, let's talk about this file.")
         
     else:
         await message.answer("Please upload a PDF file.")
@@ -100,64 +103,134 @@ async def handle_pdf_file(message: types.Message):
 
 
 
-# MESSAGE HANDLER 
+# HANDLER FOR INTERNET SEARCH
 
+
+
+@dp.message(Command("search"))
+async def handle_search(message: types.Message):
+    
+    global vector_db, CONTEXT, CHUNKS, MODE
+    
+    MODE = "internet_search"
+    
+    await message.answer("Ask me anything...")
+    
+
+# MESSAGE HANDLER 
 
 
 
 @dp.message(F.text & ~F.text.startswith('/'))
 async def send_message(message: types.Message):
-    global CONTEXT, CHUNKS, CHUNKS_NUMBERS
-    if len(CONTEXT) < 2:
-    
-        # store the unique chunks
-        CHUNKS = list({doc.page_content: doc for doc in  retrieve_context(vector_db, message.text, k=4)}.values())
+    global CONTEXT, CHUNKS, CHUNKS_NUMBERS, MODE, vector_db
+    if MODE == "chat_with_docs":
+        if len(CONTEXT) < 2:
+        
+            # store the unique chunks
+            CHUNKS = list({doc.page_content: doc for doc in  retrieve_context(vector_db, message.text, k=4)}.values())
 
-        print("RETRIEVED CONTENT:")
-        for chunk in CHUNKS:
-            print(chunk)  
-            print("------")          
-    
-        full_context = "\n".join([doc.page_content for doc in CHUNKS])
-        prompt = f"Relying on this Context answer my question. But keep in mind that you have to answer this question only relying on context i did provide:\n{full_context}\n\nQuestion:\n{message.text}"
+            print("RETRIEVED CONTENT:")
+            for chunk in CHUNKS:
+                print(chunk)  
+                print("------")          
         
-        response, role, query, chat = generate_conversation_with_context(model = model, context=CHUNKS, query=message.text, history=CONTEXT, prompt=prompt)
-        
-        CONTEXT.append({'role': 'user', 'parts': [f'{prompt}']})
-        CONTEXT.append({'role': 'model', 'parts': [f"{response}"]})
-        
-        await message.answer(f"{response}")
-        
-    elif len(CONTEXT) >= 2:
-        
-        context = list({doc.page_content: doc for doc in  retrieve_context(vector_db, message.text, k=4)}.values())
-        
-        # Create a set of contents from the first list for faster comparison
-        existing_chunks = set(doc.page_content for doc in CHUNKS)
-
-        # Filter out chunks from list2 that already exist in list1
-        context = [doc for doc in context if doc.page_content not in existing_chunks]
-        
-        print("\n\nCONTEXT RETRIEVED:")
-        for chunk in context:
-            print(chunk)
-            print("-------")
+            full_context = "\n".join([doc.page_content for doc in CHUNKS])
+            prompt = f"Relying on this Context answer my question. But keep in mind that you have to answer this question only relying on context i did provide:\n{full_context}\n\nQuestion:\n{message.text}"
             
-    
-        full_context = "\n".join([doc.page_content for doc in context])
-        if context == []:
-            prompt = f"{message.text}"
-        else: 
-            prompt = f"I have the following context in addition, can you help a bit more?\nContext:\n{full_context}\n\nQuestion:\n{message.text}"
-        
-        response, role, query, chat = generate_conversation_with_context(model = model, context=context, query=message.text, history=CONTEXT, prompt=prompt)
-        
-        CONTEXT.append({'role': 'user', 'parts': [f'{prompt}']})
-        CONTEXT.append({'role': 'model', 'parts': [f"{response}"]})
-        
-        await message.answer(f"{response}")
-    
+            response, role, query, chat = generate_conversation_with_context(model = model, context=CHUNKS, query=message.text, history=CONTEXT, prompt=prompt)
+            
+            CONTEXT.append({'role': 'user', 'parts': [f'{prompt}']})
+            CONTEXT.append({'role': 'model', 'parts': [f"{response}"]})
+            
+            await message.answer(f"{response}")
+            
+        elif len(CONTEXT) >= 2:
+            
+            context = list({doc.page_content: doc for doc in  retrieve_context(vector_db, message.text, k=4)}.values())
+            
+            # Create a set of contents from the first list for faster comparison
+            existing_chunks = set(doc.page_content for doc in CHUNKS)
 
+            # Filter out chunks from list2 that already exist in list1
+            context = [doc for doc in context if doc.page_content not in existing_chunks]
+            
+            print("\n\nCONTEXT RETRIEVED:")
+            for chunk in context:
+                print(chunk)
+                print("-------")
+                
+        
+            full_context = "\n".join([doc.page_content for doc in context])
+            if context == []:
+                prompt = f"{message.text}"
+            else: 
+                prompt = f"I have the following context in addition, can you help a bit more?\nContext:\n{full_context}\n\nQuestion:\n{message.text}"
+            
+            response, role, query, chat = generate_conversation_with_context(model = model, context=context, query=message.text, history=CONTEXT, prompt=prompt)
+            
+            CONTEXT.append({'role': 'user', 'parts': [f'{prompt}']})
+            CONTEXT.append({'role': 'model', 'parts': [f"{response}"]})
+            
+            await message.answer(f"{response}")
+    
+    elif MODE == "internet_search":
+        
+        if len(CONTEXT) < 2:
+            # perform search
+            links_found = search_info_to_txt(question=f"{message.text}")
+            
+            docs = []
+            # Iterate through all files in the folder
+            for filename in os.listdir("web_info"):
+                file_path = os.path.join("web_info", filename)
+
+                docs = docs + upload_document(file_path=file_path)
+            
+            vector_db_ = initialize_vector_db(docs)
+            vector_db = vector_db_
+            
+            # store the unique chunks
+            CHUNKS = list({doc.page_content: doc for doc in  retrieve_context(vector_db, f"{message.text}", k=4)}.values())
+
+            full_context = "\n".join([doc.page_content for doc in CHUNKS])
+            prompt = f"Relying on this Context answer my question. But keep in mind that you have to answer this question only relying on context i did provide:\n{full_context}\n\nQuestion:\n{message.text}"
+            
+            response, role, query, chat = generate_conversation_with_context(model = model, context=CHUNKS, query=message.text, history=CONTEXT, prompt=prompt)
+            
+            CONTEXT.append({'role': 'user', 'parts': [f'{prompt}']})
+            CONTEXT.append({'role': 'model', 'parts': [f"{response}"]})
+            
+            await message.answer(f"{response}\n\nResources: {links_found}")
+        
+        elif len(CONTEXT) >= 2: 
+            
+            context = list({doc.page_content: doc for doc in  retrieve_context(vector_db, message.text, k=4)}.values())
+                
+            # Create a set of contents from the first list for faster comparison
+            existing_chunks = set(doc.page_content for doc in CHUNKS)
+
+            # Filter out chunks from list2 that already exist in list1
+            context = [doc for doc in context if doc.page_content not in existing_chunks]
+            
+            print("\n\nCONTEXT RETRIEVED:")
+            for chunk in context:
+                print(chunk)
+                print("-------")
+                
+        
+            full_context = "\n".join([doc.page_content for doc in context])
+            if context == []:
+                prompt = f"{message.text}"
+            else: 
+                prompt = f"I have the following context in addition, can you help a bit more?\nContext:\n{full_context}\n\nQuestion:\n{message.text}"
+            
+            response, role, query, chat = generate_conversation_with_context(model = model, context=context, query=message.text, history=CONTEXT, prompt=prompt)
+            
+            CONTEXT.append({'role': 'user', 'parts': [f'{prompt}']})
+            CONTEXT.append({'role': 'model', 'parts': [f"{response}"]})
+            
+            await message.answer(f"{response}")
 
 # Example of existing commands for context
 
@@ -165,8 +238,8 @@ async def send_message(message: types.Message):
 
 @dp.message(Command("start"))
 async def send_welcome(message: types.Message):
-    en_intro = """*Welcome to InfoSphere Telegram Bot* \n\nHere is the list of commands\\.\\.\\."""
-    ru_intro = """*Добро пожаловать в CookBook Telegram Бот* \n\nНиже расположены команды\\.\\.\\."""
+    en_intro = """*Welcome to InfoSphere Telegram Bot*\\. Here is the functionality of this Bot:\n/start \\- Start the Bot again\\.\n/language \\- Change the language / Сменить язык\\.\n/search \\- Search for the answer in entire internet\\."""
+    ru_intro = """*Добро пожаловать в CookBook Telegram Бот*\\. Ниже написаны функции это бота:\n/start \\- Запустить бота снова\\.\n/language \\- Change the language / Сменить язык\\.\n/search \\- Искать ответ во всем интернете\\."""
     prompt = ru_intro if LNG == 'ru' else en_intro
     await message.answer(text=prompt, parse_mode="MarkdownV2")
 
