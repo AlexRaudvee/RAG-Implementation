@@ -4,8 +4,8 @@ import requests
 
 from tqdm import tqdm
 from bs4 import BeautifulSoup
-from googlesearch import search
 from tokenizers import Tokenizer
+from googlesearch import search 
 from langchain.vectorstores import Chroma
 from semantic_text_splitter import TextSplitter
 from langchain.document_loaders import PDFMinerLoader
@@ -93,12 +93,21 @@ def generate_conversation_with_context(model, context: list, query: str, history
         return f"Failure: {e}", "model", query, chat
     
     
-def get_google_links(query, num_results=5):
-    # Perform the search
-    results = search(query, num_results=num_results)
-    # Extract the URLs
-    links = [result for result in results]
-    return links
+def google_search(query: str):
+
+    list_of = []
+
+    for link in search(query=query, num=10, stop=11):
+        list_of.append(link)
+        
+    for link in search(query=query, num=10, stop=3, tbs="qdr:h"):
+        list_of.append(link)
+    for link in search(query=query, num=10, stop=3, tbs="qdr:d"):
+        list_of.append(link)
+    for link in search(query=query, num=10, stop=3, tbs="qdr:m"):
+        list_of.append(link)
+        
+    return set(list_of) 
         
     
 def parse_and_save(url, output_filename="output.txt"):
@@ -124,7 +133,7 @@ def parse_and_save(url, output_filename="output.txt"):
         file_path = os.path.abspath(output_filename)
 
         # Return the file path and the list of links
-        return file_path, links
+        return file_path, links, url
     except Exception as e:
         print(f"An error occurred: {e}")
         return None, []
@@ -156,28 +165,24 @@ def get_relevant_links(question: str, links: list[str], similarity: float = 0.7)
     return relevant_links
     
     
-def search_info_to_txt(question: str, top: int = 5, similarity: float = 0.7):
+def search_info_to_txt(model, question: str, top: int = 5, similarity: float = 0.7):
 
     os.makedirs("web_info", exist_ok=True)
     
-    links_main = get_google_links(question, top)
+    prompt = f"i have this question:'{question}'. Rephrase it such that it suits better as a google search prompt. Your answer should contain only rephrased prompt!"
 
-    all_links_child = []
+    _response = model.generate_content(prompt)
+    question = _response.candidates[0].content.parts[0].text
+        
+
+    links_main = google_search(question)
+
     
     parent_num = 1
-    child_num= 1
     for link_root in tqdm(links_main, desc="Processing Root Links", dynamic_ncols=True):
-        file_path, links_child = parse_and_save(link_root, f"web_info/root_{parent_num}.txt")
-        links_child = get_relevant_links(question, links_child, similarity)
-        all_links_child = all_links_child + links_child
+        file_path, links_child, link = parse_and_save(link_root, f"web_info/root_{parent_num}.txt")
         parent_num += 1
-        for link_child in links_child:
-            try:
-                file_path, _ = parse_and_save(link_child, f"web_info/number_{child_num}.txt")
-                child_num += 1
-            except:
-                continue
     
-    links_visited = links_main + all_links_child
+    links_visited = get_relevant_links(question, links_main, similarity=0.65)
     
     return links_visited
