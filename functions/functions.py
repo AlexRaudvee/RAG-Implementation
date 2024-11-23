@@ -3,20 +3,20 @@ import torch
 import requests
 
 from tqdm import tqdm
+from uuid import uuid4
 from bs4 import BeautifulSoup
 from tokenizers import Tokenizer
 from googlesearch import search 
-from langchain.vectorstores import Chroma
 from semantic_text_splitter import TextSplitter
-from langchain.document_loaders import PDFMinerLoader
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.document_loaders import PDFMinerLoader
 from sklearn.metrics.pairwise import cosine_similarity
 from langchain_community.document_loaders.telegram import text_to_docs
+from langchain_community.document_loaders import WebBaseLoader
 
 from config import tokenizer, similarity_model
 
 
-def upload_document(file_path):
+def upload_document(file_path, source: str | None = None):
     print("CHUNKING OF DOCUMENT: ...")
     
     # Check file type
@@ -28,6 +28,7 @@ def upload_document(file_path):
         loader = PDFMinerLoader(file_path, concatenate_pages=True)
         documents = loader.load()
         text = documents[0].page_content
+        
     else:
         raise NotImplementedError("Unsupported file type. Only .txt and .pdf are supported.")
     
@@ -37,16 +38,19 @@ def upload_document(file_path):
 
     chunks = splitter.chunks(text=text)
     docs = text_to_docs(chunks)
+            
     print("CHUNKING COMPLETE!")
     
     return docs
 
 
-def initialize_vector_db(docs):
-    print("EMBEDDING THE DOCUMENTS: ...")
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    vector_db = Chroma.from_documents(documents=docs, embedding=embeddings, persist_directory="./db")
-    vector_db.persist()
+def add_to_vector_db(vector_db, docs):
+    print("EMBEDDING THE DOCUMENT: ...")
+    
+    uuids = [str(uuid4()) for _ in range(len(docs))]
+
+    vector_db.add_documents(documents=docs, ids=uuids)  
+    
     print("EMBEDDING DONE!")
         
     return vector_db
@@ -97,17 +101,16 @@ def google_search(query: str):
 
     list_of = []
 
-    for link in search(query=query, num=10, stop=11):
+    for link in search(query=query, num=3, stop=3):
+        list_of.append(link)
+    for link in search(query=query, num=1, stop=1, tbs="qdr:h"):
+        list_of.append(link)
+    for link in search(query=query, num=1, stop=1, tbs="qdr:d"):
+        list_of.append(link)
+    for link in search(query=query, num=1, stop=1, tbs="qdr:m"):
         list_of.append(link)
         
-    for link in search(query=query, num=10, stop=3, tbs="qdr:h"):
-        list_of.append(link)
-    for link in search(query=query, num=10, stop=3, tbs="qdr:d"):
-        list_of.append(link)
-    for link in search(query=query, num=10, stop=3, tbs="qdr:m"):
-        list_of.append(link)
-        
-    return set(list_of) 
+    return list(set(list_of) )
         
     
 def parse_and_save(url, output_filename="output.txt"):
@@ -123,7 +126,7 @@ def parse_and_save(url, output_filename="output.txt"):
         text = soup.get_text(strip=True)
 
         # Extract all links from the webpage
-        links = [a['href'] for a in soup.find_all('a', href=True) if "https://" in a['href']]
+        links = []# [a['href'] for a in soup.find_all('a', href=True) if "https://" in a['href']]
 
         # Save text to a file
         with open(output_filename, 'w', encoding='utf-8') as file:
@@ -136,7 +139,7 @@ def parse_and_save(url, output_filename="output.txt"):
         return file_path, links, url
     except Exception as e:
         print(f"An error occurred: {e}")
-        return None, []
+        return None, [], url
     
     
 def get_embedding(text):
@@ -165,7 +168,7 @@ def get_relevant_links(question: str, links: list[str], similarity: float = 0.7)
     return relevant_links
     
     
-def search_info_to_txt(model, question: str, top: int = 5, similarity: float = 0.7):
+def search_info_to_docs(model, question: str):
 
     os.makedirs("web_info", exist_ok=True)
     
@@ -173,16 +176,9 @@ def search_info_to_txt(model, question: str, top: int = 5, similarity: float = 0
 
     _response = model.generate_content(prompt)
     question = _response.candidates[0].content.parts[0].text
-        
 
-    links_main = google_search(question)
-
+    loader = WebBaseLoader(google_search(question), verify_ssl=False, bs_get_text_kwargs={"strip": True})
     
-    parent_num = 1
-    for link_root in tqdm(links_main, desc="Processing Root Links", dynamic_ncols=True):
-        file_path, links_child, link = parse_and_save(link_root, f"web_info/root_{parent_num}.txt")
-        parent_num += 1
+    docs = loader.load()
     
-    links_visited = get_relevant_links(question, links_main, similarity=0.65)
-    
-    return links_visited
+    return docs
