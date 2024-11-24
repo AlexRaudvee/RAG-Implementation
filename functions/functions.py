@@ -1,8 +1,8 @@
 import os
 import torch
+import shutil
 import requests
 
-from tqdm import tqdm
 from uuid import uuid4
 from bs4 import BeautifulSoup
 from tokenizers import Tokenizer
@@ -101,7 +101,7 @@ def google_search(query: str):
 
     list_of = []
 
-    for link in search(query=query, num=3, stop=3):
+    for link in search(query=query, num=5, stop=5):
         list_of.append(link)
     for link in search(query=query, num=1, stop=1, tbs="qdr:h"):
         list_of.append(link)
@@ -169,16 +169,51 @@ def get_relevant_links(question: str, links: list[str], similarity: float = 0.7)
     
     
 def search_info_to_docs(model, question: str):
-
-    os.makedirs("web_info", exist_ok=True)
-    
+        
     prompt = f"i have this question:'{question}'. Rephrase it such that it suits better as a google search prompt. Your answer should contain only rephrased prompt!"
 
     _response = model.generate_content(prompt)
     question = _response.candidates[0].content.parts[0].text
 
-    loader = WebBaseLoader(google_search(question), verify_ssl=False, bs_get_text_kwargs={"strip": True})
+    for link in google_search(question):
+        loader = WebBaseLoader(f"{link}", bs_get_text_kwargs={"strip": True})
     
-    docs = loader.load()
-    
+        try:
+            docs = loader.load()
+        except:
+            print(f"FAILED TO READ: {link}")
+            continue
+        
     return docs
+
+
+def links_list_to_message(input_list):
+    # Join each string with a prefix of "- " followed by a newline
+    return "\n".join(f"• [{item[1]}]({item[0]})" for item in input_list)
+
+
+def transform_text(text: str) -> str:    
+    # Replace single asterisks (*) with '>'
+    text = text.replace("\n*", "\n\n•")
+    # Replace double asterisks (**) with single asterisks (*)
+    text = text.replace("**", "*")
+    # Place a backslash before specific characters
+    characters_to_escape = ["(", ")", "[", "]", "{", "}", "-", ".", "!", "|"]
+    for char in characters_to_escape:
+        text = text.replace(char, f"\\{char}")
+    
+    return text
+
+
+def recreate_directory(path):
+    """
+    Deletes the directory if it exists and creates a new, empty one.
+    """
+    if os.path.exists(path):
+        # Remove the directory and its contents
+        shutil.rmtree(path)
+        print(f"Deleted existing directory: {path}")
+
+    # Create a new empty directory
+    os.makedirs(path)
+    print(f"Created new directory: {path}")
