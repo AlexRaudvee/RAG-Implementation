@@ -1,4 +1,5 @@
 import os
+import re
 import torch
 import shutil
 import requests
@@ -95,24 +96,22 @@ def generate_conversation_with_context(model, context: list, query: str, history
 
     except Exception as e:
         return f"Failure: {e}", "model", query, chat
-    
-    
+
+
 def google_search(query: str):
 
     list_of = []
 
-    for link in search(query=query, num=5, stop=5):
+    for link in search(query=query, num=8, stop=8):
         list_of.append(link)
-    for link in search(query=query, num=1, stop=1, tbs="qdr:h"):
-        list_of.append(link)
+
     for link in search(query=query, num=1, stop=1, tbs="qdr:d"):
         list_of.append(link)
-    for link in search(query=query, num=1, stop=1, tbs="qdr:m"):
-        list_of.append(link)
-        
-    return list(set(list_of) )
-        
+
     
+    return list(set(list_of))
+
+
 def parse_and_save(url, output_filename="output.txt"):
     try:
         # Fetch the webpage content
@@ -170,20 +169,39 @@ def get_relevant_links(question: str, links: list[str], similarity: float = 0.7)
     
 def search_info_to_docs(model, question: str):
         
-    prompt = f"i have this question:'{question}'. Rephrase it such that it suits better as a google search prompt. Your answer should contain only rephrased prompt!"
+    prompt = f"i have the following question: {question}. Generate me a list of search queries that i can put in google. Your response should contain the python list only wit at most 2 strings"
 
-    _response = model.generate_content(prompt)
-    question = _response.candidates[0].content.parts[0].text
-
-    for link in google_search(question):
-        loader = WebBaseLoader(f"{link}", bs_get_text_kwargs={"strip": True})
+    _response = model.generate_content(prompt, generation_config={"temperature": 0})
+    questions = _response.candidates[0].content.parts[0].text
     
-        try:
-            docs = loader.load()
-        except:
-            print(f"FAILED TO READ: {link}")
-            continue
+    # Use regex to extract all strings inside the quotes
+    pattern = r'["\'](.*?)["\']'
+    questions = re.findall(pattern, questions)
+    
+    links_visited = 0
+    docs = []
+    for question in questions:
+        if links_visited >= 8:
+            return docs
         
+        links_visited_on_1 = 0
+        for link in search(query=question, num=10, stop=10):
+            
+            loader = WebBaseLoader(f"{link}", bs_get_text_kwargs={"strip": True})
+            
+            try: 
+                doc = loader.load()
+                if doc not in docs:
+                    links_visited += 1
+                    links_visited_on_1 += 1
+                    docs += doc
+                    
+                if links_visited_on_1 == 4:
+                    break
+            except:
+                print(f"failed to read: {link}")
+                continue
+            
     return docs
 
 
