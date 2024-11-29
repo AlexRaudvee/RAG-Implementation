@@ -269,6 +269,10 @@ async def send_message(message: types.Message):
             msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENNQ9nQzyhLrpAveOj8j6J4hWI7jUngQACIgMAAma-oUY566OY856vSzYE")
             prompt = f"{message.text}"
             
+            print(CONTEXT[-2:])
+            print(message.text)
+            
+            
             # generate response
             response, role, query, chat = generate_conversation_with_context(model = model, context=CHUNKS, query=message.text, history=CONTEXT, prompt=prompt)
             
