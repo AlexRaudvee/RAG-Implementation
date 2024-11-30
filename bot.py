@@ -24,7 +24,7 @@ dp = Dispatcher()  # Dispatcher to manage and handle events and updates
 # Global Variables
 MODE = None  # Mode of operation: 'chat_with_docs' or 'internet_search'
 CONTEXT = []  # Conversation history for contextual replies
-LNG = None  # Current language setting ('en' or 'ru')
+LNG = "en"  # Current language setting ('en' or 'ru')
 CHUNKS = set()  # Unique document chunks used for context
 CHUNKS_NUMBERS = []  # Track chunk numbers for efficient management
 
@@ -108,6 +108,11 @@ async def handle_pdf_file(message: types.Message):
         msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENNCVnQjEYjAwGtQeYOD5qd97Qn8FiwgACkAIAAsbveUXqtGM6TksDCjYE")
         
         # Ensure 'documents' directory exists
+        try:
+            shutil.rmtree("./documents")
+        except:
+            pass
+        
         os.makedirs("documents", exist_ok=True)
 
         # Retrieve file information
@@ -131,11 +136,18 @@ async def handle_pdf_file(message: types.Message):
 
         # Delete the sticker and send confirmation
         await bot.delete_message(msg.chat.id, msg.message_id)
-        await message.answer("Okay, let's talk about this file.")
+        
+        if LNG == "en": 
+            await message.answer("Okay, let's talk about this file.")
+        elif LNG == "ru":
+            await message.answer("Хорошо, давайте поговорим о этом файле.")
     else:
         # Notify the user if the file is not a PDF or TXT
-        await message.answer("Please upload a valid PDF or TXT file.")
-
+        if LNG == "en":
+            await message.answer("Please upload a valid PDF or TXT file.")
+        elif LNG == "ru":
+            await message.answer("Пожалуйста, загрузите валидный PDF или TXT файл")
+            
 # Handler for internet search
 @dp.message(Command("search"))
 async def handle_search(message: types.Message):
@@ -151,7 +163,10 @@ async def handle_search(message: types.Message):
     MODE = "internet_search"  # Set mode to internet search
 
     # Inform the user about the activated mode
-    await message.answer("This is a demo of *HAOSearch \\(Hunt All Over Search\\)*\\. So ask me anything and will look for that in the entire internet", parse_mode="MarkdownV2")
+    if LNG == "en":
+        await message.answer("This is a demo of *HAOSearch \\(Hunt All Over Search\\)*\\. So ask me anything and I will look for that in the entire internet\\.", parse_mode="MarkdownV2")
+    elif LNG == "ru":
+        await message.answer("Это демонстрация *HAOSearch \\(Hunt All Over Search\\)*\\. Так что спрашивайте меня о чем угодно, и я поищу это во всем Интернете\\.", parse_mode="MarkdownV2")
 
 # General message handler
 @dp.message(F.text & ~F.text.startswith('/'))
@@ -163,17 +178,20 @@ async def send_message(message: types.Message):
         message (types.Message): Telegram message containing text input.
     """
     global CONTEXT, CHUNKS, CHUNKS_NUMBERS, MODE, VECTOR_STORE
-
+    
     if MODE == "chat_with_docs":
         # Respond with document-based context
         if len(CONTEXT) < 2:
             # Show typing feedback and retrieve context
             msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENNQ9nQzyhLrpAveOj8j6J4hWI7jUngQACIgMAAma-oUY566OY856vSzYE")
             CHUNKS = list({doc.page_content: doc for doc in retrieve_context(VECTOR_STORE, message.text, k=4)}.values())
+            await bot.delete_message(msg.chat.id, msg.message_id)
             
             # Create a prompt and generate response
             full_context = "\n".join([doc.page_content for doc in CHUNKS])
-            prompt = f"With the provided CONTEXT, answer the following question:\n\nCONTEXT:\n{full_context}\n\nQUESTION:\n{message.text}"
+            prompt = f"With the provided CONTEXT, answer the following QUESTION, your answer should well structured in bullet points and answer all aspects of the question:\n\nCONTEXT:\n{full_context}\n\nQUESTION:\n{message.text}"
+            
+            msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENLYZnPbu98m8InnQC4bXdrzcTronVogACeQMAAo13GUSF6cj_mt_hyjYE")
             response, _, _, _ = generate_conversation_with_context(model, CHUNKS, message.text, CONTEXT, prompt)
 
             # Save the conversation context
@@ -182,10 +200,52 @@ async def send_message(message: types.Message):
                 {'role': 'model', 'parts': [response]}
             ])
             
+            if LNG == 'ru':
+                response = translate(context=response, to_lang = 'ru')
+            
+            # Send the response to the user
+            response = transform_text(response)
+            
+            await bot.delete_message(msg.chat.id, msg.message_id)
+            # answer to the user
+            if len(response) > 4095:
+                for x in range(0, len(response), 4095):
+                    await message.answer(text=response[x:x+4095], parse_mode="MarkdownV2")
+            else:
+                await message.answer(text=response, parse_mode="MarkdownV2")
+                
+                     
+        elif len(CONTEXT) >= 2:
+            # Show typing feedback and retrieve context
+            msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENNQ9nQzyhLrpAveOj8j6J4hWI7jUngQACIgMAAma-oUY566OY856vSzYE")
+            CHUNKS = list({doc.page_content: doc for doc in retrieve_context(VECTOR_STORE, message.text, k=4)}.values())
+            await bot.delete_message(msg.chat.id, msg.message_id)
+            
+            # Create a prompt and generate response
+            full_context = "\n".join([doc.page_content for doc in CHUNKS])
+            prompt = f"I have the following CONTEXT in addition, answer the following QUESTION, your answer should well structured in bullet points and answer all aspects of the question:\n\nCONTEXT:\n{full_context}\n\nQUESTION:\n{message.text}"
+            
+            msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENLYZnPbu98m8InnQC4bXdrzcTronVogACeQMAAo13GUSF6cj_mt_hyjYE")
+            response, _, _, _ = generate_conversation_with_context(model, CHUNKS, message.text, CONTEXT, prompt)
+
+            # Save the conversation context
+            CONTEXT.extend([
+                {'role': 'user', 'parts': [prompt]},
+                {'role': 'model', 'parts': [response]}
+            ])
+            
+            if LNG == 'ru':
+                response = translate(context=response, to_lang = 'ru')
+            
             # Send the response to the user
             response = transform_text(response)
             await bot.delete_message(msg.chat.id, msg.message_id)
-            await message.answer(response, parse_mode="MarkdownV2")
+            # answer to the user
+            if len(response) > 4095:
+                for x in range(0, len(response), 4095):
+                    await message.answer(text=response[x:x+4095], parse_mode="MarkdownV2")
+            else:
+                await message.answer(text=response, parse_mode="MarkdownV2")
 
     elif MODE == "internet_search":
 
@@ -196,7 +256,7 @@ async def send_message(message: types.Message):
             msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENNBdnQh--e8ycq2zhVm-A5zMS4eumbwACRgMAAiqHGURoXzCXdu7QsTYE")
 
             # Use a custom function to perform the internet search and convert results to documents
-            docs = search_info_to_docs(model, question=f"{message.text}")
+            docs = search_info_to_docs(model, question=f"{message.text}", lng=LNG)
 
             # Remove the initial sticker message once the task is done
             await bot.delete_message(msg.chat.id, msg.message_id)
@@ -220,7 +280,7 @@ async def send_message(message: types.Message):
             full_context = "\n\n\n".join([doc.page_content for doc in CHUNKS])
 
             # Create a prompt for the model using the context and user question
-            prompt = f"""Keeping provided CONTEXT in mind answer my question, your answer should be well structured and answer all aspects of my question 
+            prompt = f"""Keeping provided CONTEXT in mind answer my question, your answer should be well structured with bullet points and answer all aspects of my question 
                         \n\nCONTEXT:\n{full_context}\n\nQUESTION:\n{message.text}"""
 
             # Generate a response using a custom function with the model, context, and prompt
@@ -245,48 +305,158 @@ async def send_message(message: types.Message):
                     title = "Unknown URL"  # Fallback title if metadata is missing
                 
                 source = doc.metadata['source']  # Extract document source (URL)
-                links.append((source, title))  # Add to the list of links
+                links.append((source.replace("(", "\\(").replace(")", "\\)"), title))  # Add to the list of links
             
             # Remove duplicate links and format them as a markdown list
             links = list(set(links))
             links = '\n'.join(f'• [{transform_text(link[1])}]({link[0]})' for link in links)
 
+            if LNG == 'ru':
+                response = translate(context=response, to_lang='ru')
+                
             # Transform the response text for better formatting
             response = transform_text(response)
 
             # Combine the response and resources into the final message
-            text = f"{response}\n*Resources:*\n{links}"
-
+            if LNG == "en":
+                text = f"{response}\n*Resources:*\n{links}"
+            elif LNG == 'ru':
+                text = f"{response}\n*Источники:*\n{links}"
+                
+            # for debug purposes
+            with open("text.txt", mode='w') as file:
+                file.write(text)
+                
             # Remove the sticker used during response generation
             await bot.delete_message(msg.chat.id, msg.message_id)
 
             # Send the final formatted response to the user
-            await message.answer(text=text, parse_mode="MarkdownV2")
+            if len(text) > 4095:
+                for x in range(0, len(text), 4095):
+                    await message.answer(text=text[x:x+4095], parse_mode="MarkdownV2")
+            else:
+                await message.answer(text=text, parse_mode="MarkdownV2")
 
         elif len(CONTEXT) >= 2:
             
-            # notify user about writing of the message by sending a sticker
-            msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENNQ9nQzyhLrpAveOj8j6J4hWI7jUngQACIgMAAma-oUY566OY856vSzYE")
-            prompt = f"{message.text}"
+            match = re.search(r"QUESTION:\s*(.*)", CONTEXT[-2:][0]['parts'][0], re.DOTALL)
+            question = match.group(1).strip()            
+            search_again = bool(float(model.generate_content(contents=f"Given my last two questions: '{question}' and '{message.text}'. return me 0 if these questions are related to the same topic and 1 otherwise", generation_config={"temperature": 1}).candidates[0].content.parts[0].text))
             
-            print(CONTEXT[-2:])
-            print(message.text)
+            if search_again:
+                # Step 1: Notify the user about the search process by sending a sticker
+                msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENNBdnQh--e8ycq2zhVm-A5zMS4eumbwACRgMAAiqHGURoXzCXdu7QsTYE")
+
+                # Use a custom function to perform the internet search and convert results to documents
+                docs = search_info_to_docs(model, question=f"{message.text}", lng=LNG)
+
+                # Remove the initial sticker message once the task is done
+                await bot.delete_message(msg.chat.id, msg.message_id)
+
+                # Step 2: Notify the user about embedding the search results
+                msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENNCVnQjEYjAwGtQeYOD5qd97Qn8FiwgACkAIAAsbveUXqtGM6TksDCjYE")
+
+                # Add the retrieved documents to the vector database for embedding and context retrieval
+                add_to_vector_db(VECTOR_STORE, docs)
+
+                # Retrieve the most relevant chunks of information from the vector database
+                CHUNKS = retrieve_context(VECTOR_STORE, message.text, k=2)
+
+                # Remove the second sticker after embedding is complete
+                await bot.delete_message(msg.chat.id, msg.message_id)
+
+                # Step 3: Notify the user that the response is being generated
+                msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENLYZnPbu98m8InnQC4bXdrzcTronVogACeQMAAo13GUSF6cj_mt_hyjYE")
+
+                # Combine the retrieved chunks to form a single context string
+                full_context = "\n\n\n".join([doc.page_content for doc in CHUNKS])
+
+                # Create a prompt for the model using the context and user question
+                prompt = f"""Keeping provided CONTEXT in mind answer my question, your answer should be well structured with bullet points and answer all aspects of my question 
+                            \n\nCONTEXT:\n{full_context}\n\nQUESTION:\n{message.text}"""
+
+                # Generate a response using a custom function with the model, context, and prompt
+                response, role, query, chat = generate_conversation_with_context(
+                    model=model, 
+                    context=CHUNKS, 
+                    query=message.text, 
+                    history=CONTEXT, 
+                    prompt=prompt
+                )
+                
+                # Step 4: Update the conversation context with the user question and model response
+                CONTEXT.append({'role': 'user', 'parts': [f'{prompt}']})
+                CONTEXT.append({'role': 'model', 'parts': [f"{response}"]})
+
+                # Step 5: Extract and format resource links from document metadata
+                links = []
+                for doc in CHUNKS:
+                    try:
+                        title = doc.metadata['title']  # Extract document title if available
+                    except:
+                        title = "Unknown URL"  # Fallback title if metadata is missing
+                    
+                    source = doc.metadata['source']  # Extract document source (URL)
+                    links.append((source.replace("(", "\\(").replace(")", "\\)"), title))  # Add to the list of links
+                
+                # Remove duplicate links and format them as a markdown list
+                links = list(set(links))
+                links = '\n'.join(f'• [{transform_text(link[1])}]({link[0]})' for link in links)
+
+                if LNG == "ru":
+                    response = translate(context=response, to_lang='ru')
+                
+                # Transform the response text for better formatting
+                response = transform_text(response)
+
+                # Combine the response and resources into the final message
+                if LNG == "en":
+                    text = f"{response}\n*Resources:*\n{links}"
+                elif LNG == "ru":
+                    text = f"{response}\n*Источники:*\n{links}"
+                    
+                # for debug purposes
+                with open("text.txt", mode='w') as file:
+                    file.write(text)
+                    
+                # Remove the sticker used during response generation
+                await bot.delete_message(msg.chat.id, msg.message_id)
+
+                # Send the final formatted response to the user
+                # Send the final formatted response to the user
+                if len(text) > 4095:
+                    for x in range(0, len(text), 4095):
+                        await message.answer(text=text[x:x+4095], parse_mode="MarkdownV2")
+                else:
+                    await message.answer(text=text, parse_mode="MarkdownV2")
+                
+            else:
+                # notify user about writing of the message by sending a sticker
+                msg = await message.answer_sticker(sticker="CAACAgEAAxkBAAENNQ9nQzyhLrpAveOj8j6J4hWI7jUngQACIgMAAma-oUY566OY856vSzYE")
+
+                prompt = f"QUESTION:{message.text}"
+                
+                # generate response
+                response, role, query, chat = generate_conversation_with_context(model = model, context=CHUNKS, query=message.text, history=CONTEXT, prompt=prompt)
             
-            
-            # generate response
-            response, role, query, chat = generate_conversation_with_context(model = model, context=CHUNKS, query=message.text, history=CONTEXT, prompt=prompt)
-            
-            # add everything context
-            CONTEXT.append({'role': 'user', 'parts': [f'{prompt}']})
-            CONTEXT.append({'role': 'model', 'parts': [f"{response}"]})
-            
-            # transform text from plain to markdown
-            response = transform_text(response)
-            
-            # delete the sticker
-            await bot.delete_message(msg.chat.id, msg.message_id)
-            # answer to the user
-            await message.answer(f"{response}", parse_mode="MarkdownV2")
+                # add everything context
+                CONTEXT.append({'role': 'user', 'parts': [f'{prompt}']})
+                CONTEXT.append({'role': 'model', 'parts': [f"{response}"]})
+                
+                if LNG == "ru":
+                    response = translate(context=response, to_lang='ru')
+                    
+                # transform text from plain to markdown
+                response = transform_text(response)
+                
+                # delete the sticker
+                await bot.delete_message(msg.chat.id, msg.message_id)
+                # answer to the user
+                if len(response) > 4095:
+                    for x in range(0, len(response), 4095):
+                        await message.answer(text=response[x:x+4095], parse_mode="MarkdownV2")
+                else:
+                    await message.answer(text=response, parse_mode="MarkdownV2")
 
 
 
@@ -300,7 +470,14 @@ async def send_welcome(message: types.Message):
         message (types.Message): Telegram message triggering the command.
     """
     global VECTOR_STORE, CONTEXT, CHUNKS
-    recreate_directory("db")  # Clear the database directory
+    
+    # Clear the database directory
+    try:
+        shutil.rmtree("./db")
+        shutil.rmtree("./documents")
+    except: 
+        pass
+    
     VECTOR_STORE = Chroma(
         collection_name="collection",
         embedding_function=embeddings,
@@ -312,7 +489,7 @@ async def send_welcome(message: types.Message):
     # Select the introduction based on the language
     en_intro = ("*Welcome to InfoSphere Telegram Bot*\\. To start, you can send a PDF or TXT file, "
                 "or use the following commands:\n/start \\- Restart the bot\\.\n/language \\- Change the language\\.\n/search \\- HAOSearch the internet\\.")
-    ru_intro = ("*Добро пожаловать в CookBook Telegram Бот*\\. Вы можете загрузить PDF или TXT файл или использовать команды:\n/start \\- Запустить бота\\.\n/language \\- Сменить язык\\.\n/search \\- Искать ответ в интернете\\.")
+    ru_intro = ("*Добро пожаловать в InfoSphere Телеграм Бот*\\. Вы можете загрузить PDF или TXT файл или использовать команды:\n/start \\- Запустить бота\\.\n/language \\- Сменить язык\\.\n/search \\- Искать ответ в интернете\\.")
     prompt = ru_intro if LNG == 'ru' else en_intro
 
     await message.answer(text=prompt, parse_mode="MarkdownV2")
@@ -323,9 +500,13 @@ async def send_help(message: types.Message):
     """
     Send a help message
     """
-    help_text = ("*Help*\\. \nYou can use the following commands:\n/start \\- This command restart the bot\\.\n/search \\- This command activates the HAOSearch mode, when the bot is able to look out online resources to answer your question\\.\n/help \\- Holp command which returns all the commands and instruction for this bot\\.")
+    help_text_en = "*Help*\\.\n • This Bot is aimed to help you with search of any information, you can upload your own documents \\(PDF, TXT\\), and answer questions about this documents, the bot is going to give you answer relying on the context from this documents\\.\n • In addition you can use command /search, and then type your question, then the bot is going to look for information in entire Internet \\(HAOSearch\\)\\. \nYou can use the following commands:\n/start \\- This command to restart the bot\\.\n/search \\- This command activates the HAOSearch mode, when the bot is able to look out online resources to answer your question\\.\n/help \\- Holp command which returns all the commands and instruction for this bot\\."
+    help_text_ru = "*Помощь*\\.\n • Этот бот призван помочь вам в поиске любой информации, вы можете загружать свои собственные документы \\(PDF, TXT\\), и отвечать на вопросы по этим документам, бот собирается чтобы дать вам ответ, основываясь на контексте из этого документа\\.\n • Кроме того, вы можете использовать команду /search, а затем ввести свой вопрос, тогда бот будет искать информацию во всем Интернете \\(HAOSearch\\)\\. \nВы можете использовать следующее команды:\n/start \\- Эта команда для перезапуска бота\\.\n/search \\- Эта команда активирует режим HAOSearch, когда бот может искать онлайн-ресурсы, чтобы ответить на ваш вопрос\\.\ n/help \\- команда Holp, которая возвращает все команды и инструкции для этого бота\\."
     
-    await message.answer(help_text, parse_mode="MarkdownV2")
+    if LNG == 'en':
+        await message.answer(help_text_en, parse_mode="MarkdownV2")
+    elif LNG == 'ru':
+        await message.answer(help_text_ru, parse_mode="MarkdownV2")
     
 # Main function
 async def main():
@@ -334,9 +515,10 @@ async def main():
     """
     # Set bot commands
     await bot.set_my_commands([
-        BotCommand(command="/search", description="Search the internet"),
+        BotCommand(command="/search", description="HAOSearch in internet"),
         BotCommand(command="/language", description="Change language"),
-        BotCommand(command="/start", description="Restart the bot"),
+        BotCommand(command="/start", description="Restart the InfoSearch"),
+        BotCommand(command="/help", description="How to use the InfoSphere"),
     ])
 
     # Start polling for updates

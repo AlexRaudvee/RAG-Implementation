@@ -4,6 +4,8 @@ import torch
 import shutil
 import requests
 
+import translators as ts
+
 from uuid import uuid4
 from bs4 import BeautifulSoup
 from tokenizers import Tokenizer
@@ -167,7 +169,10 @@ def get_relevant_links(question: str, links: list[str], similarity: float = 0.7)
     return relevant_links
     
     
-def search_info_to_docs(model, question: str):
+def search_info_to_docs(model, question: str, lng: str = "en"):
+        
+    if lng == 'ru':
+        question = translate(question, to_lang='en')
         
     prompt = f"i have the following question: {question}. Generate me a list of search queries that i can put in google. Your response should contain the python list only wit at most 2 strings"
 
@@ -185,7 +190,7 @@ def search_info_to_docs(model, question: str):
             return docs
         
         links_visited_on_1 = 0
-        for link in search(query=question, num=10, stop=10):
+        for link in search(query=question, lang=lng, num=10, stop=10):
             
             loader = WebBaseLoader(f"{link}", bs_get_text_kwargs={"strip": True})
             
@@ -213,10 +218,11 @@ def links_list_to_message(input_list):
 def transform_text(text: str) -> str:    
     # Replace single asterisks (*) with '>'
     text = text.replace("\n*", "\n\n•")
+    text = text.replace("\n    *", "\n    •")
     # Replace double asterisks (**) with single asterisks (*)
     text = text.replace("**", "*")
     # Place a backslash before specific characters
-    characters_to_escape = ["(", ")", "[", "]", "{", "}", "-", ".", "!", "|"]
+    characters_to_escape = ["(", ")", "[", "]", "{", "}", "-", ".", "!", "|", "+", "~"]
     for char in characters_to_escape:
         text = text.replace(char, f"\\{char}")
     
@@ -235,3 +241,14 @@ def recreate_directory(path):
     # Create a new empty directory
     os.makedirs(path)
     print(f"Created new directory: {path}")
+    
+    
+def translate(context: str, html: bool = False, to_lang: str = "ru") -> str:
+
+    # Perform the translation
+    if html:
+        translated_text = ts.translate_html(html_text=context, translator='yandex', to_language=to_lang)
+    else:
+        translated_text = ts.translate_text(query_text=context, translator='yandex', to_language=to_lang)
+    
+    return translated_text
