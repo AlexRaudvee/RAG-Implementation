@@ -37,6 +37,7 @@ try:
 except:
     pass
 
+
 VECTOR_STORE = Chroma(
     collection_name="collection",  # Name of the vector database collection
     embedding_function=embeddings,  # Embedding model for semantic search

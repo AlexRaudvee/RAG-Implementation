@@ -1,6 +1,8 @@
+import chromadb
+
 import google.generativeai as genai
 
-from envvar import GEMINI_API_KEY
+from envvar import GEMINI_API_KEY, host
 from transformers import BertTokenizer, BertModel
 
 genai.configure(api_key=GEMINI_API_KEY)
