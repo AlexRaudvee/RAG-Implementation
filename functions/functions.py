@@ -219,6 +219,10 @@ def transform_text(text: str) -> str:
     # Replace single asterisks (*) with '>'
     text = text.replace("\n*", "\n\n•")
     text = text.replace("\n    *", "\n    •")
+    text = text.replace("\n   *", "\n   •")
+    text = text.replace("\n  *", "\n  •")
+    text = text.replace("   *", "   •")
+    text = text.replace("  *", "  •")
     # Replace double asterisks (**) with single asterisks (*)
     text = text.replace("**", "*")
     # Place a backslash before specific characters

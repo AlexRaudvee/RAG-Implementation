@@ -207,6 +207,10 @@ async def send_message(message: types.Message):
             # Send the response to the user
             response = transform_text(response)
             
+            # for debug purposes
+            with open("text.txt", mode='w') as file:
+                file.write(response)
+                
             await bot.delete_message(msg.chat.id, msg.message_id)
             # answer to the user
             if len(response) > 4095:
@@ -342,7 +346,7 @@ async def send_message(message: types.Message):
             
             match = re.search(r"QUESTION:\s*(.*)", CONTEXT[-2:][0]['parts'][0], re.DOTALL)
             question = match.group(1).strip()            
-            search_again = bool(float(model.generate_content(contents=f"Given my last two questions: '{question}' and '{message.text}'. return me 0 if these questions are related to the same topic and 1 otherwise", generation_config={"temperature": 1}).candidates[0].content.parts[0].text))
+            search_again = bool(float(model.generate_content(contents=f"Given my last two questions: '{question}' and '{message.text}'. return me 0 if these questions are related to the same topic and 1 otherwise, your answer should be only 0 or 1 no words or letters", generation_config={"temperature": 1}).candidates[0].content.parts[0].text))
             
             if search_again:
                 # Step 1: Notify the user about the search process by sending a sticker
