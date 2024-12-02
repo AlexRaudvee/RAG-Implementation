@@ -20,4 +20,5 @@ tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 similarity_model = BertModel.from_pretrained('bert-base-uncased')
 
 # load the embedding model
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+local_model_path = "./embedding"
+embeddings = HuggingFaceEmbeddings(model_name=local_model_path)
