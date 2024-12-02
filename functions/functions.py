@@ -1,9 +1,11 @@
+import io
 import os
 import re
 import torch
 import shutil
+import PyPDF2
 import requests
-
+import urllib.request
 import translators as ts
 
 from uuid import uuid4
@@ -11,26 +13,42 @@ from bs4 import BeautifulSoup
 from tokenizers import Tokenizer
 from googlesearch import search 
 from semantic_text_splitter import TextSplitter
-from langchain_community.document_loaders import PDFMinerLoader
 from sklearn.metrics.pairwise import cosine_similarity
 from langchain_community.document_loaders.telegram import text_to_docs
 from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.vectorstores import DocArrayInMemorySearch
 
-from config import tokenizer, similarity_model
+from config import tokenizer, similarity_model, BOT_TOKEN, embeddings
 
 
-def upload_document(file_path, source: str | None = None):
+def upload_document(file_path):
     print("CHUNKING OF DOCUMENT: ...")
+    # URL of the file
+    URL = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
     
     # Check file type
-    if file_path.endswith(".txt"):
-        with open(file_path, "r", encoding="utf-8") as file:
-            text = file.read()
-        
-    elif file_path.endswith(".pdf"):
-        loader = PDFMinerLoader(file_path, concatenate_pages=True)
-        documents = loader.load()
-        text = documents[0].page_content
+    if URL.endswith(".txt"):
+        # Send a GET request
+        response = requests.get(URL)
+
+        # Ensure the request was successful
+        if response.status_code == 200:
+            text = response.text
+            
+    elif URL.endswith(".pdf"):
+        # Fetch the PDF file as bytes
+        req = urllib.request.Request(URL, headers={'User-Agent': "Mozilla/5.0"})
+        remote_file = urllib.request.urlopen(req).read()
+
+        # Convert bytes to a file-like object
+        remote_file_bytes = io.BytesIO(remote_file)
+        # Read and process the PDF
+        pdf_reader = PyPDF2.PdfReader(remote_file_bytes)
+        text = ""
+
+        # Extract text from each page
+        for page in pdf_reader.pages:
+            text += page.extract_text()
         
     else:
         raise NotImplementedError("Unsupported file type. Only .txt and .pdf are supported.")
@@ -50,17 +68,16 @@ def upload_document(file_path, source: str | None = None):
 def add_to_vector_db(vector_db, docs):
     print("EMBEDDING THE DOCUMENT: ...")
     
-    uuids = [str(uuid4()) for _ in range(len(docs))]
-
-    vector_db.add_documents(documents=docs, ids=uuids)  
+    # uuids = [str(uuid4()) for _ in range(len(docs))]
+    vector_db = DocArrayInMemorySearch.from_documents(docs, embeddings)
     
     print("EMBEDDING DONE!")
         
     return vector_db
 
 
-def retrieve_context(vector_db, query: str, k: int=3):
-    return vector_db.similarity_search(query, k=k)
+def retrieve_context(vector_db, query: str, k: int=4):
+    return vector_db.similarity_search(query=query, k=k)
 
 
 def generate_response_with_context(model, context, query):
@@ -256,3 +273,25 @@ def translate(context: str, html: bool = False, to_lang: str = "ru") -> str:
         translated_text = ts.translate_text(query_text=context, translator='yandex', to_language=to_lang)
     
     return translated_text
+
+def extract_urls_and_clean_text(text):
+    # Regular expression for URLs and domain names
+    pattern = r"(https?://[^\s]+|www\.[^\s]+|(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})"
+    
+    # Find all matches (URLs and domains)
+    urls = re.findall(pattern, text)
+    
+    # Remove URLs/domains from the text
+    clean_text = re.sub(pattern, '', text).strip()
+    
+    return urls, clean_text
+
+def contains_links(text):
+    # Regular expression for detecting URLs or domain names
+    pattern = r"(https?://[^\s]+|www\.[^\s]+|(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})"
+    
+    # Search for the pattern in the text
+    match = re.search(pattern, text)
+    
+    # Return True if a match is found, otherwise False
+    return bool(match)

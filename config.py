@@ -2,8 +2,9 @@ import chromadb
 
 import google.generativeai as genai
 
-from envvar import GEMINI_API_KEY, host
+from envvar import GEMINI_API_KEY, host, BOT_TOKEN
 from transformers import BertTokenizer, BertModel
+from langchain_huggingface import HuggingFaceEmbeddings
 
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -17,3 +18,6 @@ model = genai.GenerativeModel(model_name = "gemini-1.5-flash-002", system_instru
 # Load pre-trained BERT model and tokenizer for computing text similarity
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 similarity_model = BertModel.from_pretrained('bert-base-uncased')
+
+# load the embedding model
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
