@@ -202,8 +202,8 @@ async def send_message(message: types.Message):
             response = transform_text(response)
             
             # for debug purposes
-            with open("text.txt", mode='w') as file:
-                file.write(response)
+            # with open("text.txt", mode='w') as file:
+            #     file.write(response)
                 
             await bot.delete_message(msg.chat.id, msg.message_id)
             # answer to the user
@@ -323,8 +323,8 @@ async def send_message(message: types.Message):
                 text = f"{response}\n*Источники:*\n{links}"
                 
             # for debug purposes
-            with open("text.txt", mode='w') as file:
-                file.write(text)
+            # with open("text.txt", mode='w') as file:
+            #     file.write(text)
                 
             # Remove the sticker used during response generation
             await bot.delete_message(msg.chat.id, msg.message_id)
@@ -415,8 +415,8 @@ async def send_message(message: types.Message):
                     text = f"{response}\n*Источники:*\n{links}"
                     
                 # for debug purposes
-                with open("text.txt", mode='w') as file:
-                    file.write(text)
+                # with open("text.txt", mode='w') as file:
+                #     file.write(text)
                     
                 # Remove the sticker used during response generation
                 await bot.delete_message(msg.chat.id, msg.message_id)
@@ -551,12 +551,6 @@ async def send_welcome(message: types.Message):
         message (types.Message): Telegram message triggering the command.
     """
     global VECTOR_STORE, CONTEXT, CHUNKS, MODE
-    
-    # Clear the database directory
-    try:
-        shutil.rmtree("./db")
-    except: 
-        pass
     
     VECTOR_STORE = None
     CONTEXT = []
