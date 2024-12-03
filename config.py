@@ -16,8 +16,8 @@ model = genai.GenerativeModel(model_name = "gemini-1.5-flash-002", system_instru
                               Do never start with bullet point give some overview before!""")
 
 # Load pre-trained BERT model and tokenizer for computing text similarity
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-similarity_model = BertModel.from_pretrained('bert-base-uncased')
+# tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+# similarity_model = BertModel.from_pretrained('bert-base-uncased')
 
 # load the embedding model
 local_model_path = "./embedding"

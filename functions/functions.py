@@ -18,7 +18,7 @@ from langchain_community.document_loaders.telegram import text_to_docs
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.vectorstores import DocArrayInMemorySearch
 
-from config import tokenizer, similarity_model, BOT_TOKEN, embeddings
+from config import BOT_TOKEN, embeddings
 
 
 def upload_document(file_path):
@@ -160,30 +160,30 @@ def parse_and_save(url, output_filename="output.txt"):
         return None, [], url
     
     
-def get_embedding(text):
-    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
-    with torch.no_grad():
-        outputs = similarity_model(**inputs)
-    return outputs.last_hidden_state.mean(dim=1).squeeze().numpy()
+# def get_embedding(text):
+#     inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+#     with torch.no_grad():
+#         outputs = similarity_model(**inputs)
+#     return outputs.last_hidden_state.mean(dim=1).squeeze().numpy()
 
 
-def get_relevant_links(question: str, links: list[str], similarity: float = 0.7):
-    # Get the embedding for the question
-    question_embedding = get_embedding(question)
+# def get_relevant_links(question: str, links: list[str], similarity: float = 0.7):
+#     # Get the embedding for the question
+#     question_embedding = get_embedding(question)
 
-    # Filter out the relevant links based on similarity
-    relevant_links = []
-    for link in links:
-        metadata_embedding = get_embedding(link)
+#     # Filter out the relevant links based on similarity
+#     relevant_links = []
+#     for link in links:
+#         metadata_embedding = get_embedding(link)
         
-        # Compute cosine similarity between question and metadata
-        similarity_ = cosine_similarity([question_embedding], [metadata_embedding])[0][0]
+#         # Compute cosine similarity between question and metadata
+#         similarity_ = cosine_similarity([question_embedding], [metadata_embedding])[0][0]
         
-        # Set a threshold for similarity
-        if similarity_ > similarity:  # You can adjust this threshold
-            relevant_links.append(link)
+#         # Set a threshold for similarity
+#         if similarity_ > similarity:  # You can adjust this threshold
+#             relevant_links.append(link)
             
-    return relevant_links
+#     return relevant_links
     
     
 def search_info_to_docs(model, question: str, lng: str = "en"):
